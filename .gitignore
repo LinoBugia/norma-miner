@@ -1,0 +1,16 @@
+# PDFs (Eingabedokumente)
+*.pdf
+*.PDF
+
+# Virtuelle Umgebungen
+.venv/
+venv/
+env/
+.env/
+
+# Python-Artefakte
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store

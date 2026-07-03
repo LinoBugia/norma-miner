@@ -1,0 +1,23 @@
+{
+  "ollama_url": "http://localhost:11434",
+  "language": "Deutsch",
+  "output_dir": "./output",
+  "wrap_width": 100,
+  "chunker": {
+    "model": "deepseek-r1:14b",
+    "think": true,
+    "num_ctx": 8192,
+    "temperature": 0.2,
+    "window_lines": 80,
+    "min_chunk_lines": 4,
+    "max_chunk_lines": 40
+  },
+  "formatter": {
+    "model": "qwen2.5:14b",
+    "think": false,
+    "num_ctx": 8192,
+    "temperature": 0.4,
+    "num_predict": 4096,
+    "prev_block_chars": 4000
+  }
+}
