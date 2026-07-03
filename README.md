@@ -1,6 +1,12 @@
 # norma-miner
 
+[![🇬🇧 English version](https://img.shields.io/badge/🇬🇧_English_version-click_here-2d7d46?style=for-the-badge)](README.en.md)
+
 **Beliebigen Text (PDF/TXT/MD) mit lokalen LLMs in schönes, informationsreiches, RAG-/LLM-freundliches Markdown verwandeln — mit Live-Monitor-GUI.**
+
+![norma-miner GUI: links das Dokument mit wanderndem Highlight, rechts oben der Modell-Kontext mit Füllstand, rechts unten der Generate-Stream](Example.png)
+
+*Live-Monitor während Stufe 2: Links wandert das Highlight durchs Dokument (grün = fertig, orange = wird gerade formatiert, blau = gechunkt), rechts oben der komplette Prompt samt Kontext-Füllstand, rechts unten der Markdown-Stream des Modells.*
 
 Zwei-Stufen-Pipeline, komplett lokal über [Ollama](https://ollama.com):
 
