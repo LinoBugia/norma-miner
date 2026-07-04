@@ -67,6 +67,7 @@ def _stage_chunking(lines: list[str], cfg: dict, emit: Emit,
     window = int(ccfg.get("window_lines", 80))
     min_lines = int(ccfg.get("min_chunk_lines", 4))
     max_lines = int(ccfg.get("max_chunk_lines", 40))
+    max_overlap = int(ccfg.get("max_overlap_lines", 3))
 
     emit({"type": "stage", "stage": "chunking"})
     chunks: list[tuple[int, int]] = []
@@ -76,13 +77,15 @@ def _stage_chunking(lines: list[str], cfg: dict, emit: Emit,
         emit({"type": "window", "start": cursor, "end": win_end})
 
         messages = chunker.build_messages(lines, cursor, win_end,
-                                          min_lines, max_lines)
+                                          min_lines, max_lines, max_overlap)
         content = _run_llm(cfg, ccfg, messages, emit=emit,
                            stop_event=stop_event,
                            label=f"Chunker · Rows {cursor}-{win_end}")
 
-        ranges = chunker.normalize_ranges(chunker.parse_ranges(content),
-                                          cursor, win_end)
+        # Modell antwortet relativ zum Fenster (Row 1..n) -> zurueckschieben
+        ranges = chunker.normalize_ranges(
+            chunker.to_absolute(chunker.parse_ranges(content), cursor),
+            cursor, win_end, max_overlap)
         if not ranges:
             ranges = chunker.fallback_ranges(lines, cursor, win_end, max_lines)
         # letzter Bereich eines nicht-finalen Fensters ist evtl. mitten im

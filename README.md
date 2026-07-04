@@ -4,9 +4,13 @@
 
 **Beliebigen Text (PDF/TXT/MD) mit lokalen LLMs in schönes, informationsreiches, RAG-/LLM-freundliches Markdown verwandeln — mit Live-Monitor-GUI.**
 
-![norma-miner GUI: links das Dokument mit wanderndem Highlight, rechts oben der Modell-Kontext mit Füllstand, rechts unten der Generate-Stream](Example.png)
+![Stufe 1 · Chunking: deepseek-r1 denkt über die Blockgrenzen nach, links das blaue Chunker-Fenster, rechts der Thinking-Stream mit den finalen Row-Bereichen](Example2.png)
 
-*Live-Monitor während Stufe 2: Links wandert das Highlight durchs Dokument (grün = fertig, orange = wird gerade formatiert, blau = gechunkt), rechts oben der komplette Prompt samt Kontext-Füllstand, rechts unten der Markdown-Stream des Modells.*
+*Stufe 1 · Chunking: Das Thinking-Modell (deepseek-r1) arbeitet sich fensterweise durchs Dokument (blaues Highlight links). Rechts sieht man live sein Denken — und darunter die finale Antwort: nichts als `Row A-B`-Bereiche.*
+
+![Stufe 2 · Formatierung: qwen2.5 verwandelt Block 4/14 in englisches Markdown, links grün = fertig, orange = aktueller Block](Example3.png)
+
+*Stufe 2 · Formatierung: Der aktuelle Block ist orange hervorgehoben, fertige Blöcke sind grün. Rechts oben der komplette Prompt samt Kontext-Füllstand, rechts unten streamt das Markdown — hier mit Zielsprache Englisch bei deutschem Quelltext.*
 
 Zwei-Stufen-Pipeline, komplett lokal über [Ollama](https://ollama.com):
 
@@ -36,10 +40,11 @@ Zwei-Stufen-Pipeline, komplett lokal über [Ollama](https://ollama.com):
 
 ## Features
 
-- **Row-Protokoll-Chunking**: Das Thinking-Modell sieht nummerierte Zeilen und gibt nach dem Denken ausschließlich `Row A-B`-Bereiche aus. Antworten werden geparst, repariert (lückenlos, überlappungsfrei) und zu große Blöcke an Leerzeilen nachgeteilt. Bei unbrauchbarer Antwort greift ein Fallback — die Pipeline bleibt nie hängen.
+- **Row-Protokoll-Chunking**: Das Thinking-Modell sieht nummerierte Zeilen und gibt nach dem Denken ausschließlich `Row A-B`-Bereiche aus. Antworten werden geparst, repariert (lückenlos, streng fortschreitend) und zu große Blöcke an Leerzeilen nachgeteilt. Bei unbrauchbarer Antwort greift ein Fallback — die Pipeline bleibt nie hängen.
+- **Überlappende Blöcke erlaubt**: Liegt eine semantische Grenze *mitten in einer Zeile*, darf der Chunker überlappen (`Row 1-24`, `Row 24-64`, max. `max_overlap_lines`) — die geteilte Zeile landet in beiden Blöcken. Da der Formatter den fertigen Vorgänger-Block sieht, schreibt er den Overlap nicht doppelt, sondern nutzt ihn für fließende Übergänge.
 - **Token-Limit-sicher**: Der Chunker arbeitet fensterweise (`window_lines`) durchs Dokument; der letzte, evtl. angeschnittene Block eines Fensters wird im nächsten Fenster neu bewertet.
 - **Monitor-GUI (CustomTkinter)**: Links das Dokument — das Chunker-Fenster (blau), der gerade formatierte Block (orange) und fertige Blöcke (grün) wandern live durchs Dokument. Rechts oben der **Modell-Kontext** (kompletter Prompt + Kontext-Füllstand), rechts unten der **Generate-Stream** inkl. Thinking (grau kursiv).
-- **RAG-/LLM-freundlicher Output**: Jeder Block ist eigenständig verständlich (Pronomen aufgelöst, Kontext mitgegeben), faktentreu, mit Überschriften, Fettungen, Listen und Tabellen. Blöcke sind durch `---` getrennt — das passt direkt zum `marker: "---"`-Chunking des text-embedder-Projekts.
+- **RAG-/LLM-freundlicher Output**: Kompression ohne Verlust — Füllwörter, Redundanz und rhetorisches Beiwerk fliegen raus, jede Information bleibt. Bevorzugt dichte Strukturen (**Begriff:** Fakt-Listen, Tabellen) statt nacherzählter Prosa. Jeder Block ist eigenständig verständlich (Pronomen aufgelöst, Kontext mitgegeben) und faktentreu. Blöcke sind durch `---` getrennt — das passt direkt zum `marker: "---"`-Chunking des text-embedder-Projekts.
 - **Struktur-Kontext für den Formatter**: Beim Formatieren sieht das Modell immer (a) den **zuletzt formatierten Block** (klar als „Text davor" deklariert, Umfang via `prev_block_chars`) und (b) die **komplette bisherige Kapitel-Outline** (`#` / `##` / `###` mit aktueller Position). So laufen Überschriften-Hierarchie, Ton und Terminologie konsistent über Blockgrenzen weiter. Wird die Outline zu lang, wird sie automatisch auf `#`/`##` reduziert — der Prompt bleibt sicher unter `num_ctx`.
 - **Sequentielle Stufen**: Erst chunkt Stufe 1 das ganze Dokument, dann formatiert Stufe 2 — jedes Modell wird nur einmal geladen (wichtig bei 24 GB RAM, kein Modell-Thrashing).
 - **Sprache & Modelle konfigurierbar** über `config.json` oder direkt in der GUI-Kopfzeile.
@@ -100,7 +105,8 @@ python main.py --cli dokument.pdf
     "temperature": 0.2,
     "window_lines": 80,           // Zeilen pro Chunker-Fenster (Token-Limit!)
     "min_chunk_lines": 4,
-    "max_chunk_lines": 40
+    "max_chunk_lines": 40,
+    "max_overlap_lines": 3        // Blöcke dürfen sich um bis zu N Zeilen überlappen (0 = aus)
   },
   "formatter": {
     "model": "qwen2.5:14b",
@@ -133,3 +139,7 @@ python main.py --cli dokument.pdf
 - **Chunker liefert Unsinn** → kleineres Fenster (`window_lines`), Temperatur senken, oder stärkeres Thinking-Modell. Notfalls greift ohnehin der Leerzeilen-Fallback.
 - **Sehr langsam** → kleinere Modelle (8b/12b) wählen; Thinking-Modelle brauchen für das Denken naturgemäß am längsten.
 - **PDF liefert Zeichensalat** → gescanntes PDF ohne Textlayer; vorher OCR (z. B. `ocrmypdf`) laufen lassen.
+
+## Lizenz
+
+[MIT](LICENSE) © 2026 Lino Bugia

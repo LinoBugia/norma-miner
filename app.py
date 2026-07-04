@@ -80,32 +80,35 @@ class App(ctk.CTk):
                                        text_color="#8892a4")
         self.file_label.pack(side="left", padx=6)
 
-        self.start_btn = ctk.CTkButton(bar, text="▶ Start", width=90,
-                                       fg_color="#2d7d46", hover_color="#256a3b",
-                                       state="disabled", command=self.start)
-        self.start_btn.pack(side="right", padx=(6, 12), pady=10)
+        # side="right" packt von rechts nach links: zuerst Gepacktes landet
+        # ganz rechts. Widgets vor ihrem Label packen, damit die Beschriftung
+        # links vor dem zugehoerigen Element steht.
         self.stop_btn = ctk.CTkButton(bar, text="■ Stop", width=90,
                                       fg_color="#8b3a3a", hover_color="#733030",
                                       state="disabled", command=self.stop)
-        self.stop_btn.pack(side="right", padx=6)
+        self.stop_btn.pack(side="right", padx=(6, 12), pady=10)
+        self.start_btn = ctk.CTkButton(bar, text="▶ Start", width=90,
+                                       fg_color="#2d7d46", hover_color="#256a3b",
+                                       state="disabled", command=self.start)
+        self.start_btn.pack(side="right", padx=6)
 
         models = list_models(self.cfg["ollama_url"]) or [
             self.cfg["chunker"]["model"], self.cfg["formatter"]["model"]]
 
-        ctk.CTkLabel(bar, text="Sprache").pack(side="right", padx=(12, 4))
         self.lang_entry = ctk.CTkEntry(bar, width=90)
         self.lang_entry.insert(0, self.cfg.get("language", "Deutsch"))
-        self.lang_entry.pack(side="right")
+        self.lang_entry.pack(side="right", padx=(4, 18))
+        ctk.CTkLabel(bar, text="Sprache").pack(side="right")
 
-        ctk.CTkLabel(bar, text="Formatter").pack(side="right", padx=(12, 4))
         self.formatter_menu = ctk.CTkOptionMenu(bar, values=models, width=200)
         self.formatter_menu.set(self.cfg["formatter"]["model"])
-        self.formatter_menu.pack(side="right")
+        self.formatter_menu.pack(side="right", padx=(4, 18))
+        ctk.CTkLabel(bar, text="Formatter").pack(side="right")
 
-        ctk.CTkLabel(bar, text="Chunker").pack(side="right", padx=(12, 4))
         self.chunker_menu = ctk.CTkOptionMenu(bar, values=models, width=200)
         self.chunker_menu.set(self.cfg["chunker"]["model"])
-        self.chunker_menu.pack(side="right")
+        self.chunker_menu.pack(side="right", padx=(4, 18))
+        ctk.CTkLabel(bar, text="Chunker").pack(side="right", padx=(12, 0))
 
     def _build_body(self) -> None:
         body = ctk.CTkFrame(self, fg_color="transparent")

@@ -10,7 +10,8 @@
     "temperature": 0.2,
     "window_lines": 80,
     "min_chunk_lines": 4,
-    "max_chunk_lines": 40
+    "max_chunk_lines": 40,
+    "max_overlap_lines": 3
   },
   "formatter": {
     "model": "qwen2.5:14b",
