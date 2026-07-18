@@ -42,7 +42,7 @@ Zwei-Stufen-Pipeline, komplett lokal über [Ollama](https://ollama.com):
 
 - **Row-Protokoll-Chunking**: Das Thinking-Modell sieht nummerierte Zeilen und gibt nach dem Denken ausschließlich `Row A-B`-Bereiche aus. Antworten werden geparst, repariert (lückenlos, streng fortschreitend) und zu große Blöcke an Leerzeilen nachgeteilt. Bei unbrauchbarer Antwort greift ein Fallback — die Pipeline bleibt nie hängen.
 - **Überlappende Blöcke erlaubt**: Liegt eine semantische Grenze *mitten in einer Zeile*, darf der Chunker überlappen (`Row 1-24`, `Row 24-64`, max. `max_overlap_lines`) — die geteilte Zeile landet in beiden Blöcken. Da der Formatter den fertigen Vorgänger-Block sieht, schreibt er den Overlap nicht doppelt, sondern nutzt ihn für fließende Übergänge.
-- **Token-Limit-sicher**: Der Chunker arbeitet fensterweise (`window_lines`) durchs Dokument; der letzte, evtl. angeschnittene Block eines Fensters wird im nächsten Fenster neu bewertet.
+- **Token-Limit-sicher**: Der Chunker arbeitet fensterweise (`window_lines`, wählbar in GUI/CLI) durchs Dokument. Da der Text hinter dem Fensterrand unsichtbar weiterläuft, lässt er am Fensterende **immer bewusst einen Rest an Zeilen frei** — sein letzter Block endet an der letzten sicheren Grenze deutlich vor dem Rand. Die Pipeline setzt das nächste Fenster genau nach dem letzten vollständigen Block an, das den Rest zusammen mit seiner Fortsetzung sieht. Spannt das Modell doch bis zum Rand, wird der letzte Block als Sicherheitsnetz verworfen und neu bewertet. Nur das letzte Fenster muss bis zum Dokumentende abdecken.
 - **Monitor-GUI (CustomTkinter)**: Links das Dokument — das Chunker-Fenster (blau), der gerade formatierte Block (orange) und fertige Blöcke (grün) wandern live durchs Dokument. Rechts oben der **Modell-Kontext** (kompletter Prompt + Kontext-Füllstand), rechts unten der **Generate-Stream** inkl. Thinking (grau kursiv).
 - **RAG-/LLM-freundlicher Output**: Kompression ohne Verlust — Füllwörter, Redundanz und rhetorisches Beiwerk fliegen raus, jede Information bleibt. Bevorzugt dichte Strukturen (**Begriff:** Fakt-Listen, Tabellen) statt nacherzählter Prosa. Jeder Block ist eigenständig verständlich (Pronomen aufgelöst, Kontext mitgegeben) und faktentreu. Blöcke sind durch `---` getrennt — das passt direkt zum `marker: "---"`-Chunking des text-embedder-Projekts.
 - **Struktur-Kontext für den Formatter**: Beim Formatieren sieht das Modell immer (a) den **zuletzt formatierten Block** (klar als „Text davor" deklariert, Umfang via `prev_block_chars`) und (b) die **komplette bisherige Kapitel-Outline** (`#` / `##` / `###` mit aktueller Position). So laufen Überschriften-Hierarchie, Ton und Terminologie konsistent über Blockgrenzen weiter. Wird die Outline zu lang, wird sie automatisch auf `#`/`##` reduziert — der Prompt bleibt sicher unter `num_ctx`.
@@ -87,7 +87,8 @@ python main.py          # oder: python app.py
 **Headless/CLI:**
 
 ```bash
-python main.py --cli dokument.pdf
+python main.py --cli dokument.pdf              # mit config.json-Werten
+python main.py --cli dokument.pdf --window 60  # Chunker-Fenster überschreiben
 ```
 
 ## Konfiguration (`config.json`)
@@ -103,7 +104,7 @@ python main.py --cli dokument.pdf
     "think": true,                // natives Thinking anfordern (Fallback: <think>-Tags werden gefiltert)
     "num_ctx": 8192,              // Kontextfenster
     "temperature": 0.2,
-    "window_lines": 80,           // Zeilen pro Chunker-Fenster (Token-Limit!)
+    "window_lines": 100,          // Zeilen pro Chunker-Fenster (Token-Limit!) — auch in der GUI ("Fenster") und per --window wählbar
     "min_chunk_lines": 4,
     "max_chunk_lines": 40,
     "max_overlap_lines": 3        // Blöcke dürfen sich um bis zu N Zeilen überlappen (0 = aus)
@@ -118,7 +119,7 @@ python main.py --cli dokument.pdf
 }
 ```
 
-**Faustregel für `window_lines`:** Bei `wrap_width: 100` sind 80 Zeilen ≈ 2 500 Token — bleibt mit Prompt komfortabel unter `num_ctx: 8192`. Größeres Kontextfenster? `window_lines` hochdrehen, dann sieht der Chunker mehr Zusammenhang.
+**Faustregel für `window_lines`:** Bei `wrap_width: 100` sind 100 Zeilen ≈ 3 000 Token — bleibt mit Prompt komfortabel unter `num_ctx: 8192`. Größeres Kontextfenster? `window_lines` hochdrehen, dann sieht der Chunker mehr Zusammenhang.
 
 ## Projektstruktur
 

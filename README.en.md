@@ -42,7 +42,7 @@ A two-stage pipeline, fully local via [Ollama](https://ollama.com):
 
 - **Row-protocol chunking**: The thinking model sees numbered lines and, after reasoning, outputs nothing but `Row A-B` ranges. Responses are parsed, repaired (gapless, strictly progressing) and oversized blocks are re-split at blank lines. If the answer is unusable, a fallback kicks in — the pipeline never stalls.
 - **Overlapping blocks allowed**: If a semantic boundary falls *in the middle of a line*, the chunker may overlap (`Row 1-24`, `Row 24-64`, capped by `max_overlap_lines`) — the shared line lands in both blocks. Since the formatter sees the finished previous block, it never writes the overlap twice but uses it for smooth transitions.
-- **Token-limit safe**: The chunker moves through the document window by window (`window_lines`); the last, possibly cut-off block of a window is re-evaluated in the next window.
+- **Token-limit safe**: The chunker moves through the document window by window (`window_lines`, selectable in GUI/CLI). Since the text continues invisibly beyond the window edge, it **always deliberately leaves a tail of rows uncovered** — its last block ends at the last confident boundary well before the edge. The pipeline starts the next window right after the last complete block, which then sees that tail together with its continuation. If the model does span to the edge anyway, the last block is dropped as a safety net and re-evaluated. Only the final window must cover through the end of the document.
 - **Monitor GUI (CustomTkinter)**: On the left the document — the chunker window (blue), the block currently being formatted (orange) and finished blocks (green) travel live through the document. Top right the **model context** (full prompt + context fill level), bottom right the **generate stream** including thinking (gray italic).
 - **RAG-/LLM-friendly output**: Compression without loss — filler words, redundancy and rhetorical flourishes are stripped, every piece of information is kept. Dense structures (**term:** fact lists, tables) are preferred over retold prose. Every block is understandable on its own (pronouns resolved, context provided) and faithful to the facts. Blocks are separated by `---` — which directly matches the `marker: "---"` chunking of the text-embedder project.
 - **Structural context for the formatter**: While formatting, the model always sees (a) the **previously formatted block** (clearly declared as "the text before", size via `prev_block_chars`) and (b) the **full chapter outline so far** (`#` / `##` / `###` with the current position). This keeps heading hierarchy, tone and terminology consistent across block boundaries. If the outline grows too long, it is automatically reduced to `#`/`##` — the prompt stays safely below `num_ctx`.
@@ -87,7 +87,8 @@ python main.py          # or: python app.py
 **Headless/CLI:**
 
 ```bash
-python main.py --cli document.pdf
+python main.py --cli document.pdf              # with config.json values
+python main.py --cli document.pdf --window 60  # override the chunker window
 ```
 
 ## Configuration (`config.json`)
@@ -103,7 +104,7 @@ python main.py --cli document.pdf
     "think": true,                // request native thinking (fallback: <think> tags are filtered)
     "num_ctx": 8192,              // context window
     "temperature": 0.2,
-    "window_lines": 80,           // lines per chunker window (token limit!)
+    "window_lines": 100,          // lines per chunker window (token limit!) — also selectable in the GUI ("Fenster") and via --window
     "min_chunk_lines": 4,
     "max_chunk_lines": 40,
     "max_overlap_lines": 3        // blocks may overlap by up to N lines (0 = off)
@@ -118,7 +119,7 @@ python main.py --cli document.pdf
 }
 ```
 
-**Rule of thumb for `window_lines`:** With `wrap_width: 100`, 80 lines ≈ 2,500 tokens — together with the prompt this stays comfortably below `num_ctx: 8192`. Larger context window? Increase `window_lines` and the chunker sees more coherence.
+**Rule of thumb for `window_lines`:** With `wrap_width: 100`, 100 lines ≈ 3,000 tokens — together with the prompt this stays comfortably below `num_ctx: 8192`. Larger context window? Increase `window_lines` and the chunker sees more coherence.
 
 ## Project structure
 

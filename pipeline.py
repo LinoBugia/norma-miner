@@ -64,7 +64,7 @@ def _stage_chunking(lines: list[str], cfg: dict, emit: Emit,
                     stop_event) -> list[tuple[int, int]]:
     ccfg = cfg["chunker"]
     total = len(lines)
-    window = int(ccfg.get("window_lines", 80))
+    window = int(ccfg.get("window_lines", 100))
     min_lines = int(ccfg.get("min_chunk_lines", 4))
     max_lines = int(ccfg.get("max_chunk_lines", 40))
     max_overlap = int(ccfg.get("max_overlap_lines", 3))
@@ -74,10 +74,12 @@ def _stage_chunking(lines: list[str], cfg: dict, emit: Emit,
     cursor = 1
     while cursor <= total:
         win_end = min(cursor + window - 1, total)
+        is_final = win_end >= total
         emit({"type": "window", "start": cursor, "end": win_end})
 
         messages = chunker.build_messages(lines, cursor, win_end,
-                                          min_lines, max_lines, max_overlap)
+                                          min_lines, max_lines, max_overlap,
+                                          is_final=is_final)
         content = _run_llm(cfg, ccfg, messages, emit=emit,
                            stop_event=stop_event,
                            label=f"Chunker · Rows {cursor}-{win_end}")
@@ -88,9 +90,11 @@ def _stage_chunking(lines: list[str], cfg: dict, emit: Emit,
             cursor, win_end, max_overlap)
         if not ranges:
             ranges = chunker.fallback_ranges(lines, cursor, win_end, max_lines)
-        # letzter Bereich eines nicht-finalen Fensters ist evtl. mitten im
-        # Thema abgeschnitten -> im naechsten Fenster neu bewerten
-        if win_end < total and len(ranges) > 1:
+        # Hat das Modell bis zum Fensterrand durchgespannt, ist der letzte
+        # Bereich evtl. mitten im Thema abgeschnitten -> im naechsten Fenster
+        # neu bewerten. Hoert es frueher auf (abgedaempfter Schluss), sind
+        # seine Bloecke vollstaendig und der Cursor setzt direkt dahinter an.
+        if not is_final and ranges[-1][1] >= win_end and len(ranges) > 1:
             ranges = ranges[:-1]
 
         for a, b in ranges:

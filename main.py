@@ -4,7 +4,7 @@
 Aufruf:
     python main.py                       # GUI (Monitor)
     python main.py --cli datei.pdf       # headless, Stream auf stdout
-    python main.py --cli datei.pdf --config pfad.json
+    python main.py --cli datei.pdf --config pfad.json --window 60
 """
 
 from __future__ import annotations
@@ -20,10 +20,12 @@ def load_config(path: str) -> dict:
         return json.load(f)
 
 
-def run_cli(file: str, config_path: str) -> int:
+def run_cli(file: str, config_path: str, window: int | None = None) -> int:
     import pipeline
 
     cfg = load_config(config_path)
+    if window:
+        cfg["chunker"]["window_lines"] = max(10, window)
     status = {"ok": True}
 
     def emit(ev: dict) -> None:
@@ -61,10 +63,13 @@ def main() -> int:
                         help="Datei headless verarbeiten statt GUI zu starten")
     parser.add_argument("--config",
                         default=str(Path(__file__).parent / "config.json"))
+    parser.add_argument("--window", type=int, default=None,
+                        help="Chunker-Fenstergröße in Zeilen "
+                             "(überschreibt window_lines, Default 100)")
     args = parser.parse_args()
 
     if args.cli:
-        return run_cli(args.cli, args.config)
+        return run_cli(args.cli, args.config, args.window)
 
     import app
     app.main()

@@ -100,6 +100,12 @@ class App(ctk.CTk):
         self.lang_entry.pack(side="right", padx=(4, 18))
         ctk.CTkLabel(bar, text="Sprache").pack(side="right")
 
+        self.window_entry = ctk.CTkEntry(bar, width=52)
+        self.window_entry.insert(
+            0, str(self.cfg["chunker"].get("window_lines", 100)))
+        self.window_entry.pack(side="right", padx=(4, 18))
+        ctk.CTkLabel(bar, text="Fenster").pack(side="right")
+
         self.formatter_menu = ctk.CTkOptionMenu(bar, values=models, width=200)
         self.formatter_menu.set(self.cfg["formatter"]["model"])
         self.formatter_menu.pack(side="right", padx=(4, 18))
@@ -230,6 +236,11 @@ class App(ctk.CTk):
         cfg["chunker"]["model"] = self.chunker_menu.get()
         cfg["formatter"]["model"] = self.formatter_menu.get()
         cfg["language"] = self.lang_entry.get().strip() or "Deutsch"
+        try:
+            cfg["chunker"]["window_lines"] = max(
+                10, int(self.window_entry.get().strip()))
+        except ValueError:
+            cfg["chunker"]["window_lines"] = 100
 
         self.stop_event.clear()
         self._reset_views()

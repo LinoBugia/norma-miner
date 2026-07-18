@@ -8,9 +8,9 @@
     "think": true,
     "num_ctx": 8192,
     "temperature": 0.2,
-    "window_lines": 80,
+    "window_lines": 100,
     "min_chunk_lines": 4,
-    "max_chunk_lines": 40,
+    "max_chunk_lines": 50,
     "max_overlap_lines": 3
   },
   "formatter": {
