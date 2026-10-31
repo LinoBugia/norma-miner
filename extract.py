@@ -1,8 +1,12 @@
-"""Text-Extraktion: PDF/TXT/MD -> normalisierte Zeilenliste.
+"""Text extraction: TXT/MD -> normalized list of lines.
 
-Die Zeilen sind die Grundlage fuer das Row-Protokoll des Chunkers,
-deshalb werden lange Zeilen umgebrochen und Leerzeilen-Bloecke
-auf eine Leerzeile reduziert.
+These lines are the basis for the chunker's row protocol, so long lines
+are wrapped and runs of blank lines are collapsed into a single one.
+
+PDFs are deliberately out of scope. Extracting a PDF well means OCR for
+scans and a vision model for figures, which is what img-text-extractor
+does; a plain text-layer read here would silently drop every figure and
+return noise for scanned pages.
 """
 
 from __future__ import annotations
@@ -10,39 +14,25 @@ from __future__ import annotations
 import textwrap
 from pathlib import Path
 
-SUPPORTED_SUFFIXES = (".pdf", ".txt", ".md")
-
-
-def _pdf_to_text(path: Path) -> str:
-    try:
-        import fitz  # pymupdf
-    except ImportError:
-        fitz = None
-    if fitz is not None:
-        with fitz.open(path) as doc:
-            return "\n".join(page.get_text("text") for page in doc)
-    try:
-        from pypdf import PdfReader
-    except ImportError as e:
-        raise RuntimeError(
-            "Kein PDF-Backend gefunden. Bitte installieren: pip install pymupdf"
-        ) from e
-    reader = PdfReader(str(path))
-    return "\n".join((page.extract_text() or "") for page in reader.pages)
+SUPPORTED_SUFFIXES = (".txt", ".md")
 
 
 def load_text(path: str | Path) -> str:
     path = Path(path)
     suffix = path.suffix.lower()
-    if suffix not in SUPPORTED_SUFFIXES:
-        raise ValueError(f"Nicht unterstuetztes Format: {suffix} (erlaubt: {SUPPORTED_SUFFIXES})")
     if suffix == ".pdf":
-        return _pdf_to_text(path)
+        raise ValueError(
+            "PDFs are not read here. Convert the PDF first with "
+            "img-text-extractor (https://github.com/LinoBugia/img-text-extractor), "
+            "then feed the resulting .txt to norma-miner.")
+    if suffix not in SUPPORTED_SUFFIXES:
+        raise ValueError(
+            f"Unsupported format: {suffix} (allowed: {SUPPORTED_SUFFIXES})")
     return path.read_text(encoding="utf-8", errors="replace")
 
 
 def to_lines(text: str, wrap_width: int = 100) -> list[str]:
-    """Normalisiert Text zu Zeilen: Umbruch langer Zeilen, max. 1 Leerzeile am Stueck."""
+    """Normalize text into lines: wrap long lines, at most one blank in a row."""
     lines: list[str] = []
     blank_pending = False
     for raw in text.splitlines():
@@ -66,5 +56,5 @@ def to_lines(text: str, wrap_width: int = 100) -> list[str]:
 def load_lines(path: str | Path, wrap_width: int = 100) -> list[str]:
     lines = to_lines(load_text(path), wrap_width)
     if not lines:
-        raise RuntimeError(f"Kein Text extrahierbar aus {path}")
+        raise RuntimeError(f"No text could be extracted from {path}")
     return lines

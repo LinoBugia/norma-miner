@@ -1,16 +1,16 @@
-"""Orchestriert die Zwei-Stufen-Pipeline und meldet alles als Events.
+"""Orchestrates the two-stage pipeline and reports everything as events.
 
-Stage 1 (Chunker):  Thinking-Modell laeuft fensterweise durchs Dokument
-                    und liefert semantische Row-Bereiche.
-Stage 2 (Formatter): Textmodell verwandelt jeden Block in Markdown.
+Stage 1 (chunker):   a thinking model walks through the document window by
+                     window and returns semantic row ranges.
+Stage 2 (formatter): a text model turns every block into Markdown.
 
-Beide Stufen laufen strikt nacheinander, damit Ollama jedes Modell nur
-einmal laden muss (wichtig bei 24 GB RAM). Alle Fortschritte gehen als
-Event-Dicts an `emit`, damit GUI und CLI dieselbe Pipeline nutzen koennen.
+The stages run strictly one after another so Ollama has to load each model
+only once (important with 24 GB RAM). All progress is handed to `emit` as
+event dicts, which lets the GUI and the CLI share the same pipeline.
 
-Event-Typen:
+Event types:
   doc_loaded, stage, window, context, stream_reset, stream, chunk,
-  format_current, chunk_done, progress, done, error, aborted
+  fallback, format_current, chunk_done, progress, done, error, aborted
 """
 
 from __future__ import annotations
@@ -31,13 +31,13 @@ BLOCK_SEPARATOR = "\n\n---\n\n"
 
 
 def est_tokens(text: str) -> int:
-    """Grobe Token-Schaetzung (~3.5 Zeichen pro Token)."""
+    """Rough token estimate (~3.5 characters per token)."""
     return max(1, int(len(text) / 3.5))
 
 
 def _run_llm(cfg: dict, section: dict, messages: list[dict], *,
              emit: Emit, stop_event, label: str) -> str:
-    """Streamt einen LLM-Aufruf, meldet Kontext + Tokens, gibt Content zurueck."""
+    """Stream one LLM call, report context + tokens, return the content."""
     prompt_text = "\n\n".join(f"[{m['role']}]\n{m['content']}" for m in messages)
     emit({"type": "context", "model": section["model"], "label": label,
           "prompt": prompt_text, "tokens_est": est_tokens(prompt_text),
@@ -82,18 +82,24 @@ def _stage_chunking(lines: list[str], cfg: dict, emit: Emit,
                                           is_final=is_final)
         content = _run_llm(cfg, ccfg, messages, emit=emit,
                            stop_event=stop_event,
-                           label=f"Chunker · Rows {cursor}-{win_end}")
+                           label=f"Chunker · rows {cursor}-{win_end}")
 
-        # Modell antwortet relativ zum Fenster (Row 1..n) -> zurueckschieben
+        # the model answers relative to the window (row 1..n) -> map back
         ranges = chunker.normalize_ranges(
             chunker.to_absolute(chunker.parse_ranges(content), cursor),
             cursor, win_end, max_overlap)
         if not ranges:
+            # The model returned nothing parsable. Mechanical splitting keeps
+            # the run alive but produces uniform, content-blind blocks, so it
+            # must never happen silently.
             ranges = chunker.fallback_ranges(lines, cursor, win_end, max_lines)
-        # Hat das Modell bis zum Fensterrand durchgespannt, ist der letzte
-        # Bereich evtl. mitten im Thema abgeschnitten -> im naechsten Fenster
-        # neu bewerten. Hoert es frueher auf (abgedaempfter Schluss), sind
-        # seine Bloecke vollstaendig und der Cursor setzt direkt dahinter an.
+            emit({"type": "fallback", "start": cursor, "end": win_end,
+                  "blocks": len(ranges),
+                  "reason": "no parsable row range in the model's answer"})
+        # If the model spanned all the way to the window edge, its last range
+        # may be cut mid-topic -> re-evaluate it in the next window. If it
+        # stopped earlier (the intended uncovered tail), its blocks are
+        # complete and the cursor resumes directly behind them.
         if not is_final and ranges[-1][1] >= win_end and len(ranges) > 1:
             ranges = ranges[:-1]
 
@@ -107,10 +113,10 @@ def _stage_chunking(lines: list[str], cfg: dict, emit: Emit,
 
         cursor = ranges[-1][1] + 1
         emit({"type": "progress", "value": 0.5 * min(cursor / (total + 1), 1.0),
-              "label": f"Chunking: Zeile {min(cursor, total)}/{total}"})
+              "label": f"Chunking: line {min(cursor, total)}/{total}"})
 
     if not chunks:
-        raise RuntimeError("Chunking hat keine Bloecke ergeben.")
+        raise RuntimeError("Chunking produced no blocks.")
     return chunks
 
 
@@ -122,8 +128,8 @@ def _stage_formatting(lines: list[str], chunks: list[tuple[int, int]],
     prev_cap = int(fcfg.get("prev_block_chars", 4000))
     emit({"type": "stage", "stage": "formatting"})
 
-    header = (f"# {title}\n\n> Quelle: `{title}` · aufbereitet mit norma-miner "
-              f"am {datetime.date.today().isoformat()}\n")
+    header = (f"# {title}\n\n> Source: `{title}` · prepared with norma-miner "
+              f"on {datetime.date.today().isoformat()}\n")
     blocks: list[str] = []
     outline: list[str] = [f"# {title}"]
     prev_markdown = ""
@@ -137,23 +143,23 @@ def _stage_formatting(lines: list[str], chunks: list[tuple[int, int]],
             prev_markdown=prev_markdown[-prev_cap:], outline=outline)
         content = _run_llm(cfg, fcfg, messages, emit=emit,
                            stop_event=stop_event,
-                           label=f"Formatter · Block {i}/{len(chunks)}")
+                           label=f"Formatter · block {i}/{len(chunks)}")
         block = formatter.clean_output(content)
         blocks.append(block)
         prev_markdown = block
         outline.extend(formatter.extract_headings(block))
 
-        # inkrementell schreiben: bei Abbruch bleibt der Fortschritt erhalten
+        # write incrementally: an abort keeps the progress made so far
         out_path.write_text(header + BLOCK_SEPARATOR
                             + BLOCK_SEPARATOR.join(blocks) + "\n",
                             encoding="utf-8")
         emit({"type": "chunk_done", "index": i, "start": a, "end": b})
         emit({"type": "progress", "value": 0.5 + 0.5 * i / len(chunks),
-              "label": f"Formatierung: Block {i}/{len(chunks)}"})
+              "label": f"Formatting: block {i}/{len(chunks)}"})
 
 
 def run(path: str | Path, cfg: dict, emit: Emit, stop_event=None) -> None:
-    """Verarbeitet eine Datei komplett; Fehler werden als Events gemeldet."""
+    """Process one file end to end; errors are reported as events."""
     t0 = time.monotonic()
     path = Path(path)
     try:
@@ -172,5 +178,5 @@ def run(path: str | Path, cfg: dict, emit: Emit, stop_event=None) -> None:
               "seconds": time.monotonic() - t0, "chunks": len(chunks)})
     except Aborted:
         emit({"type": "aborted"})
-    except Exception as e:  # noqa: BLE001 - GUI soll jeden Fehler anzeigen
+    except Exception as e:  # noqa: BLE001 - the GUI should show every error
         emit({"type": "error", "message": f"{type(e).__name__}: {e}"})

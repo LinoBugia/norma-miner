@@ -1,9 +1,9 @@
-"""Schlanker Streaming-Client fuer die Ollama-Chat-API.
+"""Lean streaming client for the Ollama chat API.
 
-Liefert Tokens als (channel, text)-Paare, channel ist "thinking" oder
-"content". Thinking-Modelle wie deepseek-r1 werden doppelt abgedeckt:
-ueber das native "think"-Feld neuerer Ollama-Versionen und als Fallback
-ueber das Herausfiltern von <think>...</think>-Tags aus dem Content.
+Yields tokens as (channel, text) pairs, where channel is "thinking" or
+"content". Thinking models such as deepseek-r1 are covered twice: through
+the native "think" field of newer Ollama versions, and as a fallback by
+filtering <think>...</think> tags out of the content stream.
 """
 
 from __future__ import annotations
@@ -39,10 +39,10 @@ def list_models(url: str, timeout: float = 5.0) -> list[str]:
 
 
 class ThinkTagSplitter:
-    """Zerlegt einen Content-Stream mit <think>-Tags in thinking/content.
+    """Splits a content stream containing <think> tags into thinking/content.
 
-    Tags koennen mitten in einem Streaming-Happen abgeschnitten sein,
-    deshalb wird ein kleiner Puffer am Ende zurueckgehalten.
+    A tag may be cut in half across streaming chunks, so a small buffer is
+    held back at the end.
     """
 
     OPEN, CLOSE = "<think>", "</think>"
@@ -63,7 +63,7 @@ class ThinkTagSplitter:
                 self.buf = self.buf[idx + len(tag):]
                 self.in_think = not self.in_think
                 continue
-            # alles bis auf einen moeglichen Tag-Anfang ausgeben
+            # emit everything except a possible partial tag at the end
             keep = 0
             for k in range(min(len(tag) - 1, len(self.buf)), 0, -1):
                 if tag.startswith(self.buf[-k:]):
@@ -89,7 +89,7 @@ def _raw_stream(url, payload, stop_event, timeout) -> Generator[dict, None, None
                 raise OllamaError(f"Ollama HTTP {r.status_code}: {r.text[:500]}")
             for line in r.iter_lines():
                 if stop_event is not None and stop_event.is_set():
-                    raise Aborted("Abgebrochen")
+                    raise Aborted("Aborted")
                 if not line:
                     continue
                 data = json.loads(line)
@@ -99,14 +99,14 @@ def _raw_stream(url, payload, stop_event, timeout) -> Generator[dict, None, None
                 if data.get("done"):
                     return
     except requests.RequestException as e:
-        raise OllamaError(f"Verbindung zu Ollama fehlgeschlagen: {e}") from e
+        raise OllamaError(f"Connection to Ollama failed: {e}") from e
 
 
 def chat_stream(url: str, model: str, messages: list[dict],
                 options: dict | None = None, think: bool = False,
                 stop_event=None, timeout: float = 900.0,
                 ) -> Generator[tuple[str, str], None, None]:
-    """Streamt eine Chat-Antwort als (channel, text)-Paare."""
+    """Stream a chat response as (channel, text) pairs."""
     payload: dict = {"model": model, "messages": messages, "stream": True}
     if options:
         payload["options"] = options
@@ -127,11 +127,11 @@ def chat_stream(url: str, model: str, messages: list[dict],
             yield from splitter.flush()
             return
         except OllamaError as e:
-            # aeltere Ollama-Version / Modell ohne native think-Unterstuetzung:
-            # ohne think-Feld erneut versuchen, <think>-Tags filtert der Splitter
+            # older Ollama version / model without native think support:
+            # retry without the think field, the splitter filters <think> tags
             if attempt is not attempts[-1] and not started and (
                     "think" in str(e).lower()):
                 last_err = e
                 continue
             raise
-    raise last_err or OllamaError("Chat fehlgeschlagen")
+    raise last_err or OllamaError("Chat failed")

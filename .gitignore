@@ -1,14 +1,14 @@
-# PDFs (Eingabedokumente)
+# Input documents
 *.pdf
 *.PDF
 
-# Virtuelle Umgebungen
+# Virtual environments
 .venv/
 venv/
 env/
 .env/
 
-# Python-Artefakte
+# Python artefacts
 __pycache__/
 *.pyc
 

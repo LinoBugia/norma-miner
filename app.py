@@ -1,10 +1,10 @@
-"""norma-miner GUI: Live-Monitor fuer die Text-zu-Markdown-Pipeline.
+"""norma-miner GUI: live monitor for the text-to-Markdown pipeline.
 
-Links das Dokument mit wanderndem Highlight (Chunker-Fenster, aktueller
-Block, fertige Bloecke), rechts der Modell-Kontext (Prompt + Fuellstand)
-und darunter der Generate-Stream inkl. Thinking.
+On the left the document with a travelling highlight (chunker window,
+current block, finished blocks), on the right the model context (prompt +
+fill level) and below it the generate stream including thinking.
 
-Start: python app.py   (oder python main.py)
+Start: python app.py   (or python main.py)
 """
 
 from __future__ import annotations
@@ -30,12 +30,13 @@ COLORS = {
     "doc_bg": "#141a22",
     "doc_fg": "#d8dee9",
     "gutter_fg": "#4c566a",
-    "window": "#1f3a5f",   # Chunker liest gerade
-    "chunked": "#26303d",  # Block akzeptiert
-    "current": "#7a4a00",  # Formatter arbeitet gerade
-    "done": "#1c3a28",     # Block fertig
+    "window": "#1f3a5f",   # chunker is reading this
+    "chunked": "#26303d",  # block accepted
+    "current": "#7a4a00",  # formatter is working on this
+    "done": "#1c3a28",     # block finished
     "think": "#7a8494",
     "sep": "#5fb4d9",
+    "warn": "#e0a35a",     # fallback / degraded quality
 }
 
 
@@ -49,7 +50,7 @@ class App(ctk.CTk):
     def __init__(self, cfg: dict) -> None:
         super().__init__()
         self.cfg = cfg
-        self.title("norma-miner · Text → LLM-freundliches Markdown")
+        self.title("norma-miner · Text → LLM-friendly Markdown")
         self.geometry("1480x900")
         ctk.set_appearance_mode("dark")
 
@@ -66,23 +67,23 @@ class App(ctk.CTk):
         self._check_ollama()
         self.after(50, self._pump)
 
-    # ------------------------------------------------------------- Aufbau
+    # -------------------------------------------------------------- Layout
 
     def _build_header(self) -> None:
         bar = ctk.CTkFrame(self, corner_radius=0)
         bar.pack(fill="x", padx=0, pady=0)
 
-        self.open_btn = ctk.CTkButton(bar, text="📄 Datei öffnen…", width=140,
+        self.open_btn = ctk.CTkButton(bar, text="📄 Open file…", width=140,
                                       command=self.open_file)
         self.open_btn.pack(side="left", padx=(12, 6), pady=10)
 
-        self.file_label = ctk.CTkLabel(bar, text="keine Datei gewählt",
+        self.file_label = ctk.CTkLabel(bar, text="no file selected",
                                        text_color="#8892a4")
         self.file_label.pack(side="left", padx=6)
 
-        # side="right" packt von rechts nach links: zuerst Gepacktes landet
-        # ganz rechts. Widgets vor ihrem Label packen, damit die Beschriftung
-        # links vor dem zugehoerigen Element steht.
+        # side="right" packs right to left: whatever is packed first ends up
+        # furthest right. Pack each widget before its label so the caption
+        # sits to the left of the element it belongs to.
         self.stop_btn = ctk.CTkButton(bar, text="■ Stop", width=90,
                                       fg_color="#8b3a3a", hover_color="#733030",
                                       state="disabled", command=self.stop)
@@ -96,15 +97,15 @@ class App(ctk.CTk):
             self.cfg["chunker"]["model"], self.cfg["formatter"]["model"]]
 
         self.lang_entry = ctk.CTkEntry(bar, width=90)
-        self.lang_entry.insert(0, self.cfg.get("language", "Deutsch"))
+        self.lang_entry.insert(0, self.cfg.get("language", "English"))
         self.lang_entry.pack(side="right", padx=(4, 18))
-        ctk.CTkLabel(bar, text="Sprache").pack(side="right")
+        ctk.CTkLabel(bar, text="Language").pack(side="right")
 
         self.window_entry = ctk.CTkEntry(bar, width=52)
         self.window_entry.insert(
             0, str(self.cfg["chunker"].get("window_lines", 100)))
         self.window_entry.pack(side="right", padx=(4, 18))
-        ctk.CTkLabel(bar, text="Fenster").pack(side="right")
+        ctk.CTkLabel(bar, text="Window").pack(side="right")
 
         self.formatter_menu = ctk.CTkOptionMenu(bar, values=models, width=200)
         self.formatter_menu.set(self.cfg["formatter"]["model"])
@@ -123,10 +124,10 @@ class App(ctk.CTk):
         body.grid_columnconfigure(1, weight=9)
         body.grid_rowconfigure(0, weight=1)
 
-        # -- links: Dokument mit Zeilennummern und Highlights
+        # -- left: document with line numbers and highlights
         left = ctk.CTkFrame(body)
         left.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
-        ctk.CTkLabel(left, text="Dokument", font=ctk.CTkFont(weight="bold")
+        ctk.CTkLabel(left, text="Document", font=ctk.CTkFont(weight="bold")
                      ).pack(anchor="w", padx=10, pady=(8, 2))
         doc_wrap = tk.Frame(left, bg=COLORS["doc_bg"])
         doc_wrap.pack(fill="both", expand=True, padx=8, pady=(0, 8))
@@ -151,7 +152,7 @@ class App(ctk.CTk):
         self.gutter.bind("<MouseWheel>",
                          lambda e: self._scroll_doc("scroll", -e.delta, "units"))
 
-        # -- rechts: Kontext-Panel + Stream
+        # -- right: context panel + stream
         right = ctk.CTkFrame(body, fg_color="transparent")
         right.grid(row=0, column=1, sticky="nsew", padx=(6, 0))
         right.grid_rowconfigure(0, weight=2)
@@ -162,7 +163,7 @@ class App(ctk.CTk):
         ctx.grid(row=0, column=0, sticky="nsew", pady=(0, 6))
         head = ctk.CTkFrame(ctx, fg_color="transparent")
         head.pack(fill="x", padx=10, pady=(8, 2))
-        ctk.CTkLabel(head, text="Modell-Kontext",
+        ctk.CTkLabel(head, text="Model context",
                      font=ctk.CTkFont(weight="bold")).pack(side="left")
         self.ctx_label = ctk.CTkLabel(head, text="–", text_color="#8892a4")
         self.ctx_label.pack(side="right")
@@ -176,7 +177,7 @@ class App(ctk.CTk):
 
         stream = ctk.CTkFrame(right)
         stream.grid(row=1, column=0, sticky="nsew")
-        ctk.CTkLabel(stream, text="Generate-Stream",
+        ctk.CTkLabel(stream, text="Generate stream",
                      font=ctk.CTkFont(weight="bold")
                      ).pack(anchor="w", padx=10, pady=(8, 2))
         self.stream_text = tk.Text(stream, bd=0, padx=8, pady=4, wrap="word",
@@ -187,11 +188,13 @@ class App(ctk.CTk):
                                     font=(MONO[0], MONO[1], "italic"))
         self.stream_text.tag_config("sep", foreground=COLORS["sep"],
                                     font=(MONO[0], MONO[1], "bold"))
+        self.stream_text.tag_config("warn", foreground=COLORS["warn"],
+                                    font=(MONO[0], MONO[1], "bold"))
 
     def _build_statusbar(self) -> None:
         bar = ctk.CTkFrame(self, corner_radius=0)
         bar.pack(fill="x", side="bottom", pady=(6, 0))
-        self.stage_label = ctk.CTkLabel(bar, text="bereit", width=260,
+        self.stage_label = ctk.CTkLabel(bar, text="ready", width=260,
                                         anchor="w")
         self.stage_label.pack(side="left", padx=12, pady=6)
         self.elapsed_label = ctk.CTkLabel(bar, text="", width=90, anchor="e")
@@ -200,7 +203,7 @@ class App(ctk.CTk):
         self.progress.set(0)
         self.progress.pack(side="left", fill="x", expand=True, padx=6)
 
-    # -------------------------------------------------------- Scroll-Sync
+    # --------------------------------------------------------- Scroll sync
 
     def _scroll_doc(self, *args) -> None:
         self.doc.yview(*args)
@@ -210,18 +213,19 @@ class App(ctk.CTk):
         self.doc_scroll.set(first, last)
         self.gutter.yview_moveto(first)
 
-    # ------------------------------------------------------------ Aktionen
+    # ------------------------------------------------------------- Actions
 
     def _check_ollama(self) -> None:
         if not ping(self.cfg["ollama_url"]):
             self.stage_label.configure(
-                text=f"⚠ Ollama nicht erreichbar ({self.cfg['ollama_url']})",
+                text=f"⚠ Ollama not reachable ({self.cfg['ollama_url']})",
                 text_color="#e0a35a")
 
     def open_file(self) -> None:
         path = filedialog.askopenfilename(
-            title="Dokument wählen",
-            filetypes=[("Dokumente", " ".join(f"*{s}" for s in SUPPORTED_SUFFIXES))])
+            title="Choose document",
+            filetypes=[("Documents",
+                        " ".join(f"*{s}" for s in SUPPORTED_SUFFIXES))])
         if not path:
             return
         self.input_path = Path(path)
@@ -232,10 +236,11 @@ class App(ctk.CTk):
     def start(self) -> None:
         if self.worker and self.worker.is_alive():
             return
-        cfg = json.loads(json.dumps(self.cfg))  # tiefe Kopie
+        cfg = json.loads(json.dumps(self.cfg))  # deep copy
         cfg["chunker"]["model"] = self.chunker_menu.get()
         cfg["formatter"]["model"] = self.formatter_menu.get()
-        cfg["language"] = self.lang_entry.get().strip() or "Deutsch"
+        cfg["language"] = (self.lang_entry.get().strip()
+                           or self.cfg.get("language", "English"))
         try:
             cfg["chunker"]["window_lines"] = max(
                 10, int(self.window_entry.get().strip()))
@@ -257,7 +262,7 @@ class App(ctk.CTk):
 
     def stop(self) -> None:
         self.stop_event.set()
-        self.stage_label.configure(text="Abbruch angefordert…")
+        self.stage_label.configure(text="Stop requested…")
 
     def _reset_views(self) -> None:
         for widget in (self.doc, self.gutter, self.stream_text, self.ctx_text):
@@ -273,7 +278,7 @@ class App(ctk.CTk):
         self.open_btn.configure(state="normal")
         self.run_started = None
 
-    # ---------------------------------------------------------- Event-Pump
+    # ----------------------------------------------------------- Event pump
 
     def _pump(self) -> None:
         try:
@@ -291,14 +296,21 @@ class App(ctk.CTk):
         if kind == "doc_loaded":
             self._show_document(ev["lines"])
         elif kind == "stage":
-            names = {"chunking": "Stufe 1/2 · semantisches Chunking",
-                     "formatting": "Stufe 2/2 · Markdown-Formatierung"}
+            names = {"chunking": "Stage 1/2 · semantic chunking",
+                     "formatting": "Stage 2/2 · Markdown formatting"}
             self.stage_label.configure(text=names.get(ev["stage"], ev["stage"]),
                                        text_color="#d8dee9")
         elif kind == "window":
             self._retag("window", ev["start"], ev["end"], see=True)
         elif kind == "chunk":
             self.doc.tag_add("chunked", f"{ev['start']}.0", f"{ev['end'] + 1}.0")
+        elif kind == "fallback":
+            self._append_stream(
+                f"\n⚠ fallback for rows {ev['start']}-{ev['end']}: {ev['reason']} "
+                f"→ {ev['blocks']} mechanical blocks\n", "warn")
+            self.stage_label.configure(
+                text=f"⚠ fallback at rows {ev['start']}-{ev['end']} "
+                     f"(content-blind blocks)", text_color="#e0a35a")
         elif kind == "format_current":
             self.doc.tag_remove("window", "1.0", "end")
             self._retag("current", ev["start"], ev["end"], see=True)
@@ -308,7 +320,7 @@ class App(ctk.CTk):
         elif kind == "context":
             fill = min(ev["tokens_est"] / ev["num_ctx"], 1.0)
             self.ctx_label.configure(
-                text=f"{ev['model']} · ~{ev['tokens_est']}/{ev['num_ctx']} Token")
+                text=f"{ev['model']} · ~{ev['tokens_est']}/{ev['num_ctx']} tokens")
             self.ctx_bar.set(fill)
             self._set_text(self.ctx_text, ev["prompt"])
         elif kind == "stream_reset":
@@ -324,19 +336,19 @@ class App(ctk.CTk):
             self.progress.set(1)
             mins = ev["seconds"] / 60
             self.stage_label.configure(
-                text=f"✔ fertig: {ev['output']} · {ev['chunks']} Blöcke · "
+                text=f"✔ done: {ev['output']} · {ev['chunks']} blocks · "
                      f"{mins:.1f} min", text_color="#7bc98a")
             self._finish()
         elif kind == "aborted":
-            self.stage_label.configure(text="■ abgebrochen",
+            self.stage_label.configure(text="■ aborted",
                                        text_color="#e0a35a")
             self._finish()
         elif kind == "error":
-            self.stage_label.configure(text=f"✖ Fehler: {ev['message']}",
+            self.stage_label.configure(text=f"✖ Error: {ev['message']}",
                                        text_color="#e07a7a")
             self._finish()
 
-    # ------------------------------------------------------------- Helfer
+    # ------------------------------------------------------------- Helpers
 
     def _show_document(self, lines: list[str]) -> None:
         self.total_lines = len(lines)
@@ -364,7 +376,7 @@ class App(ctk.CTk):
     def _append_stream(self, text: str, tag: str | None) -> None:
         self.stream_text.configure(state="normal")
         self.stream_text.insert("end", text, tag or ())
-        # Stream-Ansicht begrenzen, damit die GUI fluessig bleibt
+        # cap the stream view so the GUI stays responsive
         if int(self.stream_text.index("end-1c").split(".")[0]) > 5000:
             self.stream_text.delete("1.0", "1000.0")
         self.stream_text.see("end")

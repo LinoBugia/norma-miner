@@ -1,146 +1,145 @@
 # norma-miner
 
-[![🇬🇧 English version](https://img.shields.io/badge/🇬🇧_English_version-click_here-2d7d46?style=for-the-badge)](README.en.md)
+Turns documents into RAG-ready Markdown without a single byte leaving the
+machine. Both models run locally through Ollama, so contracts, medical
+records, internal reports — anything you cannot paste into a hosted API —
+can still be prepared for retrieval.
 
-**Beliebigen Text (PDF/TXT/MD) mit lokalen LLMs in schönes, informationsreiches, RAG-/LLM-freundliches Markdown verwandeln — mit Live-Monitor-GUI.**
+The unusual part is who decides where the text is cut. A reasoning model
+reads the document in windows of numbered lines and answers with nothing
+but line ranges, so blocks end where topics end rather than where a token
+counter runs out. A second model then rewrites each block into dense
+Markdown that a retriever can return on its own.
 
-![Stufe 1 · Chunking: deepseek-r1 denkt über die Blockgrenzen nach, links das blaue Chunker-Fenster, rechts der Thinking-Stream mit den finalen Row-Bereichen](Example2.png)
+![The monitor during stage 1: the chunker window highlighted in the document on the left, the model's reasoning and its finished list of row ranges on the right](docs/img/monitor-chunking.png)
 
-*Stufe 1 · Chunking: Das Thinking-Modell (deepseek-r1) arbeitet sich fensterweise durchs Dokument (blaues Highlight links). Rechts sieht man live sein Denken — und darunter die finale Antwort: nichts als `Row A-B`-Bereiche.*
+Twenty-five lines of flowing prose go in (excerpt), and one self-contained
+block comes out — 37 % of the original length, every creature, number and
+relation still in place:
 
-![Stufe 2 · Formatierung: qwen2.5 verwandelt Block 4/14 in englisches Markdown, links grün = fertig, orange = aktueller Block](Example3.png)
-
-*Stufe 2 · Formatierung: Der aktuelle Block ist orange hervorgehoben, fertige Blöcke sind grün. Rechts oben der komplette Prompt samt Kontext-Füllstand, rechts unten streamt das Markdown — hier mit Zielsprache Englisch bei deutschem Quelltext.*
-
-Zwei-Stufen-Pipeline, komplett lokal über [Ollama](https://ollama.com):
-
+```text
+Die Tiefsee beherbergt eine unglaubliche Vielfalt von Kreaturen … Der
+Anglerfisch ist vielleicht das bekannteste Beispiel. Das Weibchen hat einen
+leuchtenden Köder an einer Verlängerung auf der Stirn … Das Männchen ist winzig
+und beißt sich fest, woraufhin ihre Blutgefäße verwachsen.
 ```
- PDF / TXT / MD
-      │
-      ▼
- ┌─────────────────────────────┐
- │ Extraktion & Normalisierung │  Zeilen nummerieren (Row 1, Row 2, …)
- └─────────────────────────────┘
-      │
-      ▼
- ┌─────────────────────────────┐   Stufe 1 · Thinking-Modell (z. B. deepseek-r1)
- │ Semantischer Chunker        │   bekommt Fenster nummerierter Zeilen und
- │ "Row 1-24" / "Row 25-64" …  │   antwortet NUR mit semantischen Blockgrenzen.
- └─────────────────────────────┘   Fenster wandert, bis das Dokument durch ist.
-      │
-      ▼
- ┌─────────────────────────────┐   Stufe 2 · starkes Textmodell (z. B. qwen2.5)
- │ Markdown-Formatter          │   verwandelt jeden Block in strukturiertes,
- │ Block für Block             │   selbsterklärendes Markdown.
- └─────────────────────────────┘
-      │
-      ▼
- output/<name>.md   (Blöcke durch `---` getrennt → direkt RAG-chunkbar)
+```markdown
+### Exemplarische Tiere der Tiefsee
+
+**Anglerfisch:**
+- Weibchen hat leuchtenden Köder auf Stirn für Beuteanlockung
+- Männchen winzig, beißt sich an Weibchen fest und verwächst mit ihm als
+  parasitisches Organ
+
+**Riesenkalmar:**
+- Bis zu 13 Meter lang, große Raubtier
+- Augen größer als Tischtennisbälle – größte im Tierreich
 ```
 
-## Features
-
-- **Row-Protokoll-Chunking**: Das Thinking-Modell sieht nummerierte Zeilen und gibt nach dem Denken ausschließlich `Row A-B`-Bereiche aus. Antworten werden geparst, repariert (lückenlos, streng fortschreitend) und zu große Blöcke an Leerzeilen nachgeteilt. Bei unbrauchbarer Antwort greift ein Fallback — die Pipeline bleibt nie hängen.
-- **Überlappende Blöcke erlaubt**: Liegt eine semantische Grenze *mitten in einer Zeile*, darf der Chunker überlappen (`Row 1-24`, `Row 24-64`, max. `max_overlap_lines`) — die geteilte Zeile landet in beiden Blöcken. Da der Formatter den fertigen Vorgänger-Block sieht, schreibt er den Overlap nicht doppelt, sondern nutzt ihn für fließende Übergänge.
-- **Token-Limit-sicher**: Der Chunker arbeitet fensterweise (`window_lines`, wählbar in GUI/CLI) durchs Dokument. Da der Text hinter dem Fensterrand unsichtbar weiterläuft, lässt er am Fensterende **immer bewusst einen Rest an Zeilen frei** — sein letzter Block endet an der letzten sicheren Grenze deutlich vor dem Rand. Die Pipeline setzt das nächste Fenster genau nach dem letzten vollständigen Block an, das den Rest zusammen mit seiner Fortsetzung sieht. Spannt das Modell doch bis zum Rand, wird der letzte Block als Sicherheitsnetz verworfen und neu bewertet. Nur das letzte Fenster muss bis zum Dokumentende abdecken.
-- **Monitor-GUI (CustomTkinter)**: Links das Dokument — das Chunker-Fenster (blau), der gerade formatierte Block (orange) und fertige Blöcke (grün) wandern live durchs Dokument. Rechts oben der **Modell-Kontext** (kompletter Prompt + Kontext-Füllstand), rechts unten der **Generate-Stream** inkl. Thinking (grau kursiv).
-- **RAG-/LLM-freundlicher Output**: Kompression ohne Verlust — Füllwörter, Redundanz und rhetorisches Beiwerk fliegen raus, jede Information bleibt. Bevorzugt dichte Strukturen (**Begriff:** Fakt-Listen, Tabellen) statt nacherzählter Prosa. Jeder Block ist eigenständig verständlich (Pronomen aufgelöst, Kontext mitgegeben) und faktentreu. Blöcke sind durch `---` getrennt — das passt direkt zum `marker: "---"`-Chunking des text-embedder-Projekts.
-- **Struktur-Kontext für den Formatter**: Beim Formatieren sieht das Modell immer (a) den **zuletzt formatierten Block** (klar als „Text davor" deklariert, Umfang via `prev_block_chars`) und (b) die **komplette bisherige Kapitel-Outline** (`#` / `##` / `###` mit aktueller Position). So laufen Überschriften-Hierarchie, Ton und Terminologie konsistent über Blockgrenzen weiter. Wird die Outline zu lang, wird sie automatisch auf `#`/`##` reduziert — der Prompt bleibt sicher unter `num_ctx`.
-- **Sequentielle Stufen**: Erst chunkt Stufe 1 das ganze Dokument, dann formatiert Stufe 2 — jedes Modell wird nur einmal geladen (wichtig bei 24 GB RAM, kein Modell-Thrashing).
-- **Sprache & Modelle konfigurierbar** über `config.json` oder direkt in der GUI-Kopfzeile.
-- **Abbruchsicher**: Der Output wird nach jedem Block geschrieben; Stop erhält den Fortschritt.
-
-## Installation
+## Quickstart
 
 ```bash
-cd norma-miner
-python3 -m venv .venv && source .venv/bin/activate
+# 1. local backend and the two models (~18 GB of downloads)
+brew install ollama            # or https://ollama.com/download
+ollama serve
+ollama pull deepseek-r1:14b    # chunker, 9.0 GB
+ollama pull qwen2.5:14b        # formatter, 9.0 GB
+
+# 2. this repo
 pip install -r requirements.txt
-
-# Ollama + Modelle (Empfehlung für 24 GB RAM):
-ollama pull deepseek-r1:14b    # Chunker (Thinking)
-ollama pull qwen2.5:14b       # Formatter
+python main.py                 # opens the monitor
 ```
 
-### Modell-Empfehlungen für 24 GB RAM
+In the window: **Open file…** → pick a `.txt` or `.md`, adjust models and
+target language in the header if you like, then **Start**. The result
+lands in `output/<name>.md`.
 
-| Rolle      | Empfehlung           | Alternative                        |
-|------------|----------------------|------------------------------------|
-| Chunker    | `deepseek-r1:14b`    | `qwen3:14b`, `deepseek-r1:8b` (schneller) |
-| Formatter  | `qwen2.5:14b`        | `gemma3:12b`, `llama3.1:8b` (schneller)   |
+Expect minutes, not seconds — a 32-line document took 10 minutes on a
+24 GB Mac, most of it stage 1 reasoning. Stop is safe at any point, since
+the output file is rewritten after every finished block.
 
-Beide 14b-Modelle (q4) belegen je ~9–10 GB — da die Stufen nacheinander laufen, ist immer nur eines geladen.
-
-## Benutzung
-
-**GUI (empfohlen):**
+## Commands
 
 ```bash
-python main.py          # oder: python app.py
+python main.py                                   # GUI monitor
+python main.py --cli document.txt                # headless, stream to stdout
+python main.py --cli document.txt --window 60    # smaller chunker window
+python main.py --cli document.txt --config other.json
 ```
 
-1. `📄 Datei öffnen…` → PDF/TXT/MD wählen
-2. Optional Modelle/Sprache in der Kopfzeile anpassen
-3. `▶ Start` — zuschauen, wie das Highlight durchs Dokument wandert
-4. Ergebnis: `output/<name>.md`
+## The two stages
 
-**Headless/CLI:**
+They run one after another, not in parallel, so only one model is resident
+at a time — two 14b models together would not fit in 24 GB.
 
-```bash
-python main.py --cli dokument.pdf              # mit config.json-Werten
-python main.py --cli dokument.pdf --window 60  # Chunker-Fenster überschreiben
+| Stage | Model | Is given | Returns |
+|---|---|---|---|
+| 1 · Chunker | reasoning | A window of numbered lines (`Row 1` … `Row n`) | Only line ranges: `Row 40-64` |
+| 2 · Formatter | text | One block, the chapter outline so far, and the previous block | Dense Markdown for that block |
+
+Stage 1 never reproduces text, so it cannot hallucinate content into the
+document — blocks are read from the source file by index. Details and
+reasoning in [docs/chunking.md](docs/chunking.md) and
+[docs/formatting.md](docs/formatting.md).
+
+## Input and output
+
+One file per run — `.txt` or `.md` — produces one Markdown file in
+`output/`:
+
+```markdown
+# 02_tiefsee_24000_fliesstext
+
+> Source: `02_tiefsee_24000_fliesstext` · prepared with norma-miner on 2026-09-23
+
+---
+
+### Exemplarische Tiere der Tiefsee
+…
+
+---
+
+### Hydrothermale Quellen und Tiefseeanglerfisch
+…
 ```
 
-## Konfiguration (`config.json`)
+Blocks are separated by `---` on a line of its own, and that separator —
+not the headings — is the boundary a downstream chunker should split on:
+headings are written by the model and do not map one-to-one onto blocks.
+This makes the output directly consumable by a structure-aware embedder
+such as `text-embedder`, whose `marker` mode splits on exactly that line.
 
-```jsonc
-{
-  "ollama_url": "http://localhost:11434",
-  "language": "Deutsch",          // Zielsprache des Markdown-Outputs
-  "output_dir": "./output",
-  "wrap_width": 100,              // Zeilenumbruch vor der Row-Nummerierung
-  "chunker": {
-    "model": "deepseek-r1:14b",
-    "think": true,                // natives Thinking anfordern (Fallback: <think>-Tags werden gefiltert)
-    "num_ctx": 8192,              // Kontextfenster
-    "temperature": 0.2,
-    "window_lines": 100,          // Zeilen pro Chunker-Fenster (Token-Limit!) — auch in der GUI ("Fenster") und per --window wählbar
-    "min_chunk_lines": 4,
-    "max_chunk_lines": 40,
-    "max_overlap_lines": 3        // Blöcke dürfen sich um bis zu N Zeilen überlappen (0 = aus)
-  },
-  "formatter": {
-    "model": "qwen2.5:14b",
-    "num_ctx": 8192,
-    "temperature": 0.4,
-    "num_predict": 4096,          // max. Output-Tokens pro Block
-    "prev_block_chars": 4000      // wie viel vom vorherigen Markdown-Block als Kontext mitgegeben wird
-  }
-}
-```
+**PDFs go through [img-text-extractor](https://github.com/LinoBugia/img-text-extractor)
+first.** Reading a PDF properly means OCR for scanned pages and a vision
+model for figures — that tool does both and writes the figure contents
+back into the text. Feeding a PDF straight into a plain text-layer reader
+would silently drop every chart and table image, so norma-miner does not
+offer that shortcut.
 
-**Faustregel für `window_lines`:** Bei `wrap_width: 100` sind 100 Zeilen ≈ 3 000 Token — bleibt mit Prompt komfortabel unter `num_ctx: 8192`. Größeres Kontextfenster? `window_lines` hochdrehen, dann sieht der Chunker mehr Zusammenhang.
+## Documentation
 
-## Projektstruktur
+| Document | Contents |
+|---|---|
+| [docs/chunking.md](docs/chunking.md) | The row protocol, window-local numbering, the uncovered tail, overlap, repair and fallback |
+| [docs/formatting.md](docs/formatting.md) | Compression without loss, the context each block sees, language handling |
+| [docs/configuration.md](docs/configuration.md) | Every `config.json` field, overrides, measured prompt sizes |
+| [docs/models.md](docs/models.md) | Choosing the two models, RAM, why the stages are sequential |
+| [docs/gui.md](docs/gui.md) | The monitor panels, highlight colours, the event system behind them |
 
-| Datei              | Zweck                                                        |
-|--------------------|--------------------------------------------------------------|
-| `main.py`          | Einstieg: GUI oder `--cli`                                   |
-| `app.py`           | CustomTkinter-Monitor (Dokument-Highlight, Kontext, Stream)  |
-| `pipeline.py`      | Orchestrierung der zwei Stufen, Event-System, Datei-Output   |
-| `chunker.py`       | Row-Protokoll: Prompt, Parsing, Reparatur, Fallback          |
-| `formatter.py`     | Markdown-Prompt (faktentreu, RAG-freundlich, Zielsprache)    |
-| `ollama_client.py` | Streaming-Client, Thinking-Handling (`think` + `<think>`-Tags) |
-| `extract.py`       | PDF/TXT/MD → normalisierte Zeilen (pymupdf, Fallback pypdf)  |
-| `config.json`      | Modelle, Sprache, Fenster- und Blockgrößen                   |
+## Project structure
 
-## Troubleshooting
+| Path | Purpose |
+|---|---|
+| `main.py` | Entry point: GUI, or `--cli` with `--config` and `--window` |
+| `app.py` | GUI (CustomTkinter): document highlight, model context, generate stream |
+| `pipeline.py` | Runs both stages, emits progress events, writes the output file |
+| `chunker.py` | Stage 1: prompts, range parsing, repair, overlap, fallback |
+| `formatter.py` | Stage 2: compression prompt, outline tracking |
+| `ollama_client.py` | Streaming client, thinking channel and `<think>` tag fallback |
+| `extract.py` | TXT/MD → normalized lines |
+| `config.json` | Models, language, window and block sizes |
+| `output/` | Generated Markdown |
 
-- **„Ollama nicht erreichbar“** → `ollama serve` läuft? URL in `config.json` korrekt?
-- **Chunker liefert Unsinn** → kleineres Fenster (`window_lines`), Temperatur senken, oder stärkeres Thinking-Modell. Notfalls greift ohnehin der Leerzeilen-Fallback.
-- **Sehr langsam** → kleinere Modelle (8b/12b) wählen; Thinking-Modelle brauchen für das Denken naturgemäß am längsten.
-- **PDF liefert Zeichensalat** → gescanntes PDF ohne Textlayer; vorher OCR (z. B. `ocrmypdf`) laufen lassen.
+## License
 
-## Lizenz
-
-[MIT](LICENSE) © 2026 Lino Bugia
+MIT — see [LICENSE](LICENSE).

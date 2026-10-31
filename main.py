@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""norma-miner: PDF/TXT/MD -> semantisch gechunktes, LLM-freundliches Markdown.
+"""norma-miner: TXT/MD -> semantically chunked, LLM-friendly Markdown.
 
-Aufruf:
-    python main.py                       # GUI (Monitor)
-    python main.py --cli datei.pdf       # headless, Stream auf stdout
-    python main.py --cli datei.pdf --config pfad.json --window 60
+Usage:
+    python main.py                        # GUI (monitor)
+    python main.py --cli file.txt         # headless, stream to stdout
+    python main.py --cli file.txt --config path.json --window 60
 """
 
 from __future__ import annotations
@@ -31,27 +31,31 @@ def run_cli(file: str, config_path: str, window: int | None = None) -> int:
     def emit(ev: dict) -> None:
         kind = ev["type"]
         if kind == "stage":
-            print(f"\n=== Stufe: {ev['stage']} ===", flush=True)
+            print(f"\n=== Stage: {ev['stage']} ===", flush=True)
         elif kind == "window":
-            print(f"\n-- Chunker-Fenster Rows {ev['start']}-{ev['end']}",
+            print(f"\n-- Chunker window rows {ev['start']}-{ev['end']}",
                   flush=True)
         elif kind == "chunk":
-            print(f"   Block {ev['index']}: Row {ev['start']}-{ev['end']}",
+            print(f"   Block {ev['index']}: rows {ev['start']}-{ev['end']}",
+                  flush=True)
+        elif kind == "fallback":
+            print(f"   !! FALLBACK rows {ev['start']}-{ev['end']}: {ev['reason']}"
+                  f" -> {ev['blocks']} mechanical blocks", file=sys.stderr,
                   flush=True)
         elif kind == "format_current":
-            print(f"\n-- Formatter Block {ev['index']}/{ev['total']} "
-                  f"(Rows {ev['start']}-{ev['end']})", flush=True)
+            print(f"\n-- Formatter block {ev['index']}/{ev['total']} "
+                  f"(rows {ev['start']}-{ev['end']})", flush=True)
         elif kind == "stream" and ev["channel"] == "content":
             print(ev["text"], end="", flush=True)
         elif kind == "done":
-            print(f"\n\n✔ fertig: {ev['output']} "
-                  f"({ev['chunks']} Blöcke, {ev['seconds'] / 60:.1f} min)")
+            print(f"\n\nDone: {ev['output']} "
+                  f"({ev['chunks']} blocks, {ev['seconds'] / 60:.1f} min)")
         elif kind == "error":
             status["ok"] = False
-            print(f"\nFehler: {ev['message']}", file=sys.stderr)
+            print(f"\nError: {ev['message']}", file=sys.stderr)
         elif kind == "aborted":
             status["ok"] = False
-            print("\nAbgebrochen.", file=sys.stderr)
+            print("\nAborted.", file=sys.stderr)
 
     pipeline.run(file, cfg, emit)
     return 0 if status["ok"] else 1
@@ -59,13 +63,15 @@ def run_cli(file: str, config_path: str, window: int | None = None) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--cli", metavar="DATEI",
-                        help="Datei headless verarbeiten statt GUI zu starten")
+    parser.add_argument("--cli", metavar="FILE",
+                        help="process a file headlessly instead of starting "
+                             "the GUI")
     parser.add_argument("--config",
-                        default=str(Path(__file__).parent / "config.json"))
+                        default=str(Path(__file__).parent / "config.json"),
+                        help="path to the config file (default: config.json)")
     parser.add_argument("--window", type=int, default=None,
-                        help="Chunker-Fenstergröße in Zeilen "
-                             "(überschreibt window_lines, Default 100)")
+                        help="chunker window size in lines "
+                             "(overrides window_lines, default 100)")
     args = parser.parse_args()
 
     if args.cli:
